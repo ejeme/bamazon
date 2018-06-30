@@ -1,8 +1,12 @@
 
 var mysql = require("mysql");
+var table = require("cli-table");
 var inquirer = require("inquirer");
 
+var resString = "";
+var resJSON = "";
 
+var columns = ["item_id", "product_name", "department_name", "price", "stock_quantity"];
 
 
 // Settings to connect to the Bamazon database
@@ -11,88 +15,101 @@ var connection = mysql.createConnection({
 	port: 3306,
 	user: "root",
 	password: "",
-	database: "bamazon"
+	database: "bamazon_db",
+	insecureAuth: "true"
 });
 
-
-
-
+//connection.connect();
 
 // Check to see if connection is successful
-connection.connect(function (err) {
-	if (err) throw err;
+connection.query('SELECT + 1', function (error, results, fields) {
+	if (error) throw error;
 	console.log('connection id', connection.threadId);
 	displayProducts();
-
-
 });
+
 //Query the database
 function displayProducts() {
-	connection.query("SELECT * FROM products", function (err, res) {
-		if (err)
-			console.log(err);
+	var query = "SELECT * FROM products"; 
+	connection.query (query, function (error, results, fields) {
+		if (error) throw (error);
+		resString = JSON.stringify(results,null,2)
+		resJSON = JSON.parse(resString);
+		var Table = new table({ 
+			head: ["ID", "Product Name", "Department Name", "Price", "Stock Quantity"], colWidths: [5,20,20,10,18]
+		});
 
-
-
-
-		for (var i = 0; i < res.length; i++) {
-			console.log(res[i].item_id + "|" + res[i].product_name + "|" + res[i].price);
+		for (var i = 0; i < resJSON.length; i++) {
+			var newArray = new Array();
+			Table.push(newArray);
+			for (var j = 0; j < columns.length; j++ ) {
+				newArray.push(resJSON[i][columns[j]]);
+			}
 		}
-		promptCustomer(res);
+		console.log(Table.toString());
+		customerRequest();
 	})
 }
 
+//working on customer request
 
+function customerRequest() {
 
-//working on displaying prompt
-
-inquirer.prompt([{
+inquirer.prompt([
+	{
 	type: "input",
-	name: "itemID",
+	name: "Id",
 	message: "What is the ID of the product you would like to purchase?",
-
+	validate: function(value){
+		var valid = !isNaN(parseFloat(value));
+		return valid || "Please enter a number";
+	}
+	},
+	{
 	type: "input",
 	name: "quantity",
 	message: "Please enter the quantity would you like to purchase?",
-
-}]).then(function (answers) {
-	var selectedProduct;
-
-	for (var i = 0; i < res.length; i += 1) {
-		if (res[i].item_id === parseInt(answers.itemID)) {
-			selectedProduct = res[i];
-			console.log(res[i]);
-
-
-
-		}
+	validate: function(value){
+		var valid = !isNaN(parseFloat(value));
+		return valid || "Please enter a number";
+	}
 	}
 
+])
+	.then(function (answer) {
+		checkQuantity(answer.id, answer.quantity)
 
+	});
+}
 
+function checkQuantity(id, quantity){
+	var query = "SELECT stock_quantity FROM products WHERE?"
+	connection.query(query,{
+		item_id:id
+	},
+	function (error, results,fields) {
+		if(error) throw error;
+		var stockJSON = JSON.stringify (results,null,2);
+		var stockParsed = JSON.parse(stockJSON);
+		var stockQuantity = stockParsed[0].stock_quantity;
 
-})
+		if(stockQuantity >= quantity){
+			var query = "UPDATE products SET ? WHERE ?"
 
-var userQuantity = parseInt(answers.quantity);
+			connection.query(query,[
+				{
+					stock_quantity:stockQuantity - quantity
+				},
+				{
+					item_id: id
 
-if (selectedProduct.stock_quantity < userQuantity) {
-	console.log("Insufficient Quantity");
-} else {
-	//selectedProduct.price is coming from the database
-	var cost = userQuantity * selectedProduct.price
-	//.toFixed limits decimal value to 2 spots.
-	console.log("Your total cost is: $ " + cost.toFixed(2));
-
-	//To update database
-	connection.query("UPDATE products SET ? WHERE ?", [{ "stock_quantity": selectedProduct.stock_quantity - userQuantity }, { "item_id": answers.itemID }], function (err, res) {
-		if (err) {
-			console.log("There was an error. Purchase not made.");
-			throw err;
+				}], function(error,results,fields){
+					promptBool = false;
+					displayTable();
+				});
 		}
-		console.log("Thanks for your purchase!");
-
-	})
-};
-        
-    
-
+		else {
+			console.log("Insufficient quantity!")
+		}
+	});
+}
